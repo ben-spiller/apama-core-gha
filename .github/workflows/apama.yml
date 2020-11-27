@@ -1,5 +1,8 @@
 # Sample workflow that installs Apama Community Edition and uses it build and run PySys tests for an Apama application. 
+
 # Compilation of Java and C++ plugins, and upload of ApamaDoc HTML to GitHub Pages is also demonstrated. 
+# As the C++ compilation required some time-consuming setup on Windows, remove those steps from the workflow 
+# unless you actually have some custom C++ plugins you need to compile.
 
 # Use of the setup-apama action implies that you have agreed to the terms of the Software AG license agreement; 
 # see http://www.apamacommunity.com/terms-conditions/
@@ -7,6 +10,7 @@
 # Copyright (C) 2020 Software AG, Darmstadt, Germany and/or its licensors
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 # Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
 
 name: Apama
 
@@ -48,7 +52,7 @@ jobs:
             # To use a clean cache, update the number at the end of this key
             key: apama-${{ runner.os }}-${{ env.SETUP_APAMA_VERSION }}-cache1
 
-      - uses: ApamaCommunity/github-action-setup-apama@v1.0.1
+      - uses: ApamaCommunity/github-action-setup-apama@v1.0.2
         # The setup-apama action installs Apama, as well as bundled tools such as Python 3 and a Java JDK, and adds them 
         # all to environment (as if the apama_env script had been executed/sourced), ready for use in subsequent actions. 
         # Note that use of this action in a workflow implies you have agreed to the Software AG license agreement.
