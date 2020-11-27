@@ -28,11 +28,11 @@ jobs:
       
       matrix:
         include:
-          - run-id: amd64_linux
+          - run-id: linux
             os: ubuntu-latest
             upload-docs: true
             
-          - run-id: amd64_win
+          - run-id: win
             os: windows-latest
             
     runs-on: ${{matrix.os}}
@@ -48,7 +48,7 @@ jobs:
             # To use a clean cache, update the number at the end of this key
             key: apama-${{ runner.os }}-${{ env.SETUP_APAMA_VERSION }}-cache1
 
-      - uses: ApamaCommunity/github-action-setup-apama@v1.0.0
+      - uses: ApamaCommunity/github-action-setup-apama@v1.0.1
         # The setup-apama action installs Apama, as well as bundled tools such as Python 3 and a Java JDK, and adds them 
         # all to environment (as if the apama_env script had been executed/sourced), ready for use in subsequent actions. 
         # Note that use of this action in a workflow implies you have agreed to the Software AG license agreement.
@@ -68,23 +68,23 @@ jobs:
           BRANCH: gh-pages
           FOLDER: __apamadoc
 
-      # TODO: remove these actions unless compiling custom C++/Java plugins is required 
+      # TODO: remove these C++ setup and build actions unless compiling custom C++/Java plugins is required 
       # (especially on Windows, as it's quite time-consuming to install the SDK)
       - name: Install Windows 8.1 SDK (C++)
-        if: runner.os == 'Windows DISABLED'
+        if: runner.os == 'Windows'
         shell: powershell
         run: |
           Invoke-WebRequest -Method Get -Uri https://go.microsoft.com/fwlink/p/?LinkId=323507 -OutFile sdksetup.exe -UseBasicParsing
           Get-Date
           Start-Process -Wait sdksetup.exe -ArgumentList "/q", "/norestart", "/features", "OptionId.WindowsDesktopSoftwareDevelopmentKit", "OptionId.NetFxSoftwareDevelopmentKit"
       - name: Setup Visual Studio
-        if: runner.os == 'Windows DISABLED'
+        if: runner.os == 'Windows'
         uses: microsoft/setup-msbuild@v1.0.2
         with:
           vs-version: '[14,17]'
       - name: Build custom C++ plugins (Windows)
         shell: cmd
-        if: runner.os == 'Windows DISABLED'
+        if: runner.os == 'Windows'
         run: |
           pushd %APAMA_HOME%\samples\correlator_plugin\cpp
           msbuild /p:platform=x64 correlator_plugin_cpp_api.sln
@@ -130,7 +130,6 @@ jobs:
       - name: Upload archive artifacts for any test failures
         uses: actions/upload-artifact@v2
         if: failure()
-
         with:
           name: pysys_output_${{matrix.run-id}}
           path: test/__pysys_output/${{matrix.run-id}}
@@ -138,7 +137,6 @@ jobs:
       - name: Upload EPL code coverage report
         uses: actions/upload-artifact@v2
         if: success()
-
         with:
           name: pysys_epl_coverage_${{matrix.run-id}}
           path: test/__pysys_output/${{matrix.run-id}}/eplcoverage
