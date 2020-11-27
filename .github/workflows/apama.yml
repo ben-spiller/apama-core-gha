@@ -1,6 +1,12 @@
-# Demonstrate cache doesn't work on Windows     
+# Sample workflow that installs Apama Community Edition and uses it build and run PySys tests for your application. 
 
-name: CacheDemo
+# Use of the setup-apama action implies that you have agreed to the terms of the Software AG license agreement; 
+# see http://www.apamacommunity.com/terms-conditions/
+
+# This workflow does not require a commercial license of Apama. If however you do have a commercial Apama license 
+# you must not commit your license file to any repository that can be accessed outside your organization. 
+
+name: PySys
 
 on:
   push:
@@ -10,18 +16,18 @@ on:
 
 jobs:
   test:
-    env:
-      WORKFLOW_APAMA_VERSION: 10.5.3.2
-
     strategy:
       # Disable fail fast since it's useful to see test results for all platforms even if some failed
       fail-fast: false
       
       matrix:
+          # The 4-digit version to download from http://www.apamacommunity.com/downloads/
+        apama-version: ["10.5.3.2"]
+      
         include:
-          #- run-id: amd64_linux
-          #  os: ubuntu-latest
-          #  upload-docs: true
+          - run-id: amd64_linux
+            os: ubuntu-latest
+            upload-docs: true
             
           - run-id: amd64_win
             os: windows-latest
@@ -30,130 +36,93 @@ jobs:
     
     steps:
       - uses: actions/checkout@v2
- 
-      - name: Apama installation cache
-        uses: actions/cache@v2.1.3
-        id: cache-apama-installer
+
+      - name: Cached Apama installation
+        # The always-upload actions is a fork of actions/cache allows cache to be saved even if some later steps (e.g. testing) fail
+        uses: pat-s/always-upload-cache@v2.1.3
         with:
-            # Would prefer to put this in ~/ but doesn't work on Windows currently due to https://github.com/actions/cache/issues/456
-            path: ${{ github.workspace }}/cached-apama-installation.tar
-            # To use a clean cache, add extra chars to this key
-            key: mykey-${{ matrix.run-id }}-TODO.08
+            path: ~/cached-apama-installation.tar
+            # To use a clean cache, update the number at the end of this key
+            key: apama-${{ runner.os }}-${{ matrix.apama-version }}-cache1
 
-      #- name: OTHER cache
-      #  # This fork of actions/cache allows cache to be saved even if some later steps (e.g. testing) fail
-      #  #uses: pat-s/always-upload-cache@v2.1.3
-      #  uses: actions/cache@v2.1.3
-      #  id: cache-apama-installer-foo
-      #  with:
-      #      # Would prefer to put this in ~/ but doesn't work on Windows currently due to https://github.com/actions/cache/issues/456
-      #      path: ${{ github.workspace }}/cached-apama-installation.foo
-      #      # To use a clean cache, add extra chars to this key
-      #      key: apama-${{ matrix.run-id }}-${{ env.WORKFLOW_APAMA_VERSION }}-TODOy16
-
-      - name: Download Apama
-        uses: carlosperate/download-file-action@v1.0.3
-        id: download-apama
-        if: steps.cache-apama-installer.outputs.cache-hit != 'true'
+      - uses: ApamaCommunity/github-action-setup-apama@v1.0.0
+        # The setup-apama action installs Apama, as well as bundled tools such as Python 3 and a Java JDK, and adds them 
+        # all to environment (as if the apama_env script had been executed/sourced), ready for use in subsequent actions. 
+        # Note that use of this action in a workflow implies you have agreed to the Software AG license agreement.
         with:
-           file-url: 'https://downloads.apamacommunity.com/apama/${{ env.WORKFLOW_APAMA_VERSION }}/apama_${{ env.WORKFLOW_APAMA_VERSION }}_${{ matrix.run-id }}.zip'
-           file-name: apama-installer.zip
-           location: ../apama-installer
+          apama-version: ${{ matrix.apama-version }}
 
-      - name: Install Apama
+      - name: Build ApamaDoc
         shell: bash
         run: |
-        
-          APAMA_CACHE_TAR=`pwd`/cached-apama-installation.tar
-          echo Cache location: $APAMA_CACHE_TAR
+          apamadoc ./__apamadoc $APAMA_HOME/samples/epl/simple
+     
+      - name: Upload ApamaDoc to gh-pages
+        if: matrix.upload-docs
+        uses: JamesIves/github-pages-deploy-action@3.6.2
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: gh-pages
+          FOLDER: __apamadoc
 
-          if [[ ${{runner.os}} = Windows ]]; then
-            _SAG_INSTALL_PATH=c:\\SoftwareAG
-          else
-            _SAG_INSTALL_PATH=/opt/softwareag
-          fi
-          
-          if [[ "${{ steps.cache-apama-installer.outputs.cache-hit }}" = "true" ]]; then
-            echo Unpacking Apama installation from cache
-            
-            mkdir $_SAG_INSTALL_PATH
-            cd $_SAG_INSTALL_PATH
-            tar -xf $APAMA_CACHE_TAR
+      # TODO: remove these actions unless compiling custom C++/Java plugins is required 
+      # (especially on Windows, as it's quite time-consuming to install the SDK)
+      - name: Install Windows 8.1 SDK (C++)
+        if: runner.os == 'Windows DISABLED'
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Method Get -Uri https://go.microsoft.com/fwlink/p/?LinkId=323507 -OutFile sdksetup.exe -UseBasicParsing
+          Get-Date
+          Start-Process -Wait sdksetup.exe -ArgumentList "/q", "/norestart", "/features", "OptionId.WindowsDesktopSoftwareDevelopmentKit", "OptionId.NetFxSoftwareDevelopmentKit"
+      - name: Setup Visual Studio
+        if: runner.os == 'Windows DISABLED'
+        uses: microsoft/setup-msbuild@v1.0.2
+        with:
+          vs-version: '[14,17]'
+      - name: Build custom C++ plugins (Windows)
+        shell: cmd
+        if: runner.os == 'Windows DISABLED'
+        run: |
+          pushd %APAMA_HOME%\samples\correlator_plugin\cpp
+          msbuild /p:platform=x64 correlator_plugin_cpp_api.sln
 
-            # Check it unpacked correctly
-            ls $_SAG_INSTALL_PATH/Apama > /dev/null
-          else
-            # Cache miss - need to install it
-            #mkdir --parents $_SAG_INSTALL_PATH/Apama/bin
-            #echo Hello > $_SAG_INSTALL_PATH/Apama/bin/myprogram.txt
-            
-            
-            cd ../apama-installer
-            unzip -q apama-installer.zip
-            #cp apama-installer.zip $APAMA_CACHE_TAR
-            mv apama_*/* ./
-            
-            cat > apama-installer-script.txt << EOF
-          LicenseAgree=Accept
-          InstallProducts=e2ei/11/.latest/Apama/PAMServer
-          PAM.Work.Directory.ID=__VERSION1__,$_SAG_INSTALL_PATH/apama-work
-          InstallDir=$_SAG_INSTALL_PATH
-          sagInstallerLogFile=softwareag-installer.log
-          imageFile=data/SAGImage.zip
-          EOF
-            # Need to escape backslashes as it's effectively a properties file
-            sed -i 's/\\/\\\\/g' apama-installer-script.txt
-            
-            echo Running installer with script:
-            cat apama-installer-script.txt
-            
-            ./install -readScript apama-installer-script.txt -console -scriptErrorInteract no
-            
-            # Double-check that it was installed
-            ls $_SAG_INSTALL_PATH/Apama/bin > /dev/null
-            
-            # Archive a pristine copy of the installation for the cache (before running any tests); 
-            # no need to compress as the cache already does that
-            cd $_SAG_INSTALL_PATH
-            tar -cf $APAMA_CACHE_TAR *
-            #touch `pwd`/cached-apama-installation.tar
+          mkdir %GITHUB_WORKSPACE%\src\lib
+          echo Copying into Apama project dir:
+          copy Release\*.dll %GITHUB_WORKSPACE%\src\lib
+          copy Release\*.pdb %GITHUB_WORKSPACE%\src\lib
+      - name: Build custom C++ plugins (Linux)
+        shell: bash
+        if: runner.os != Windows
+        run: |
+          cd $APAMA_HOME/samples/correlator_plugin/cpp
+          make
 
-            
-            echo TODO - contents of ~ are:
-            ls ~
-            echo ---
-            ls -l $APAMA_CACHE_TAR
-          fi
+          ls *.so
+          mkdir --parents $GITHUB_WORKSPACE/src/lib
+          cp lib*.so $GITHUB_WORKSPACE/src/lib/
 
-          cd ~
-          # Once installed, copy the entire apama environment into the GH Actions env so it can be used in any type of 
-          # shell (bash/cmd/PS etc). We also set an extra env var APAMA_PYSYS so user can run pysys from any shell. 
-          if [[ ${{runner.os}} = Windows ]]; then
-            cmd.exe /c "$_SAG_INSTALL_PATH/Apama/bin/apama_env.bat && set > apama.env"
-            echo "APAMA_PYSYS=pysys.cmd" >> $GITHUB_ENV
-          else
-            . $_SAG_INSTALL_PATH/Apama/bin/apama_env
-            env | sort >> apama.env
-            echo "APAMA_PYSYS=pysys" >> $GITHUB_ENV
-          fi
-          
-          # Until Apama 10.7 we need to explicitly enable it (and disable colorama on windows which would replace the escape codes)
-          echo PYSYS_COLOR=true >> $GITHUB_ENV
-          echo PYSYS_DISABLE_COLORAMA=true >> $GITHUB_ENV
-          
-          cat apama.env >> $GITHUB_ENV
+      - name: Build custom Java plugins
+        shell: bash
+        run: |
+          cd $APAMA_HOME/samples/correlator_plugin/java
+          ant
+          mkdir --parents $GITHUB_WORKSPACE/src/lib
+          cp *.jar $GITHUB_WORKSPACE/src/lib/
+
+      - name: Create Apama deployment directory
+        shell: bash
+        run: |
+          engine_deploy --outputDeployDir __deploydir src
+          ls __deploydir
 
       - name: PySys tests
         working-directory: test
         shell: bash
         id: pysys
         run: |
-          ls ..
-          $APAMA_PYSYS run --threads=auto --record --purge --printLogs=ALL -Xeplcoverage -XcodeCoverage --mode=ALL --outdir=`pwd`/__pysys_output/${{matrix.run-id}} || echo failed
+          $APAMA_PYSYS run --threads=auto --record --purge --printLogs=FAILURES -Xeplcoverage -XcodeCoverage --mode=ALL --outdir=`pwd`/__pysys_output/${{matrix.run-id}} 
 
-      # If any tests fail, PySys will return an error code, so we need "if: always()" so the following steps will run
-      # Since we expect failures only from the cookbook sample, that's the one we upload artifacts for (using id=pysys)
-      # The follow lines are a copy from the sample pysys workflow
+      # If any tests fail, PySys will return an error code, so later steps will not run unless explicitly enabled with "if"
 
       - name: Upload archive artifacts for any test failures
         uses: actions/upload-artifact@v2
@@ -170,3 +139,4 @@ jobs:
         with:
           name: pysys_epl_coverage_${{matrix.run-id}}
           path: test/__pysys_output/${{matrix.run-id}}/eplcoverage
+
